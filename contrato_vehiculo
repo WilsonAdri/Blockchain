@@ -1,0 +1,143 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+
+contract VehicleHistoryChain is ERC721, AccessControl {
+
+    uint256 private _nextTokenId;
+
+    bytes32 public constant WORKSHOP_ROLE = keccak256("WORKSHOP_ROLE");
+
+    constructor() ERC721("VehicleHistoryChain", "VHC") {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
+
+    // ==============================
+    // ESTRUCTURAS
+    // ==============================
+
+    struct MaintenanceRecord {
+        string description;     // Ej: cambio de aceite
+        uint256 date;           // timestamp
+        uint256 mileage;        // kilometraje
+        address workshop;       // quién hizo el mantenimiento
+    }
+
+    struct Vehicle {
+        string vin;                     // identificador único
+        string brand;
+        string model;
+        uint256 year;
+        MaintenanceRecord[] history;   // historial completo
+    }
+
+    // ==============================
+    // STORAGE
+    // ==============================
+
+    mapping(uint256 => Vehicle) public vehicles;
+    mapping(string => bool) public vinExists;
+
+    // ==============================
+    // EVENTOS
+    // ==============================
+
+    event VehicleRegistered(
+        uint256 indexed tokenId,
+        string vin,
+        address owner
+    );
+
+    event MaintenanceAdded(
+        uint256 indexed tokenId,
+        string description,
+        uint256 mileage,
+        address workshop
+    );
+
+    // ==============================
+    // REGISTRAR VEHÍCULO (NFT)
+    // ==============================
+
+    function registerVehicle(
+        address to,
+        string memory _vin,
+        string memory _brand,
+        string memory _model,
+        uint256 _year
+    ) public onlyRole(DEFAULT_ADMIN_ROLE) {
+
+        require(!vinExists[_vin], "VIN already registered");
+
+        uint256 tokenId = _nextTokenId++;
+
+        _safeMint(to, tokenId);
+
+        vehicles[tokenId].vin = _vin;
+        vehicles[tokenId].brand = _brand;
+        vehicles[tokenId].model = _model;
+        vehicles[tokenId].year = _year;
+
+        vinExists[_vin] = true;
+
+        emit VehicleRegistered(tokenId, _vin, to);
+    }
+
+    // ==============================
+    // AGREGAR MANTENIMIENTO
+    // ==============================
+
+    function addMaintenance(
+        uint256 tokenId,
+        string memory _description,
+        uint256 _mileage
+    ) public onlyRole(WORKSHOP_ROLE) {
+
+        require(_ownerOf(tokenId) != address(0), "Vehicle does not exist");
+
+        vehicles[tokenId].history.push(
+            MaintenanceRecord({
+                description: _description,
+                date: block.timestamp,
+                mileage: _mileage,
+                workshop: msg.sender
+            })
+        );
+
+        emit MaintenanceAdded(tokenId, _description, _mileage, msg.sender);
+    }
+
+    // ==============================
+    // VER HISTORIAL
+    // ==============================
+
+    function getMaintenanceHistory(uint256 tokenId)
+        public
+        view
+        returns (MaintenanceRecord[] memory)
+    {
+        return vehicles[tokenId].history;
+    }
+
+    // ==============================
+    // ROLES
+    // ==============================
+
+    function addWorkshop(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(WORKSHOP_ROLE, account);
+    }
+
+    function removeWorkshop(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(WORKSHOP_ROLE, account);
+    }
+    function supportsInterface(bytes4 interfaceId)
+    public
+    view
+    override(ERC721, AccessControl)
+    returns (bool)
+{
+    return super.supportsInterface(interfaceId);
+}
+}
